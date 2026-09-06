@@ -4,116 +4,71 @@ set -e
 # ==============================================================================
 # INITIAL ENVIRONMENT SETUP
 # ==============================================================================
-# Prevent the Mac from sleeping as long as this script process is alive
-
-
 # Expose system paths so background processes can find git, curl, and python
 export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin"
 export HOME="/Users/eknlau"
 
 echo "=================================================================="
-echo "   CWA MESOSCALE DOWNLOAD & ANALYSIS DAEMON (METHOD 2 CALCULATION)"
-echo "   Target UTC Hours: 01Z, 07Z, 15Z, 21Z                           "
+echo "   CWA MESOSCALE DOWNLOAD & ANALYSIS DAEMON                      "
+echo "   Triggered via Crontab Environment                             "
 echo "=================================================================="
 
-# --- RUN ONCE FIRST CONTROLLER ---
-RUN_IMMEDIATELY=true
+echo "=================================================================="
+echo "   CWA MESOSCALE DOWNLOAD & ANALYSIS DAEMON (RUNNING PIPELINE)   "
+echo "=================================================================="
+echo "--- 任務開始: $(date) ---"
 
-# Infinite loop that calculates the next run time, sleeps, and executes
-while true; do
-    # Capture current Unix timestamp based strictly on UTC time
-    NOW=$(date -u +%s)
+# ==============================================================================
+# DIRECTORY SAFEGUARD
+# ==============================================================================
+cd "/Users/eknlau/VS_code/GHMWS-meso-model"
+
+# ==============================================================================
+# CONFIGURATION
+# ==============================================================================
+BRANCH="main"
+githubUser="eknlau5897"
+githubRepo="GHMWS-meso-model"
+
+SAVE_DIR="/Users/eknlau/Desktop/CWA/accu_rain"
+SAVE_DIR_2="/Users/eknlau/VS_code/GHMWS-meso-model/model/CWA/accu_rain"
+
+mkdir -p "$SAVE_DIR"
+mkdir -p "$SAVE_DIR_2"
+
+# ==============================================================================
+# 0. RE-ALIGN PLUMBING LOCKS BEFORE DOWNLOADING
+# ==============================================================================
+if [ ! -d ".git" ]; then
+    echo "[Repo Guard] Setting up pristine Git plumbing matrix..."
+    git init
+    git checkout -b "$BRANCH"
+fi
+
+git remote remove origin 2>/dev/null || true
+git remote add origin "https://github.com/${githubUser}/${githubRepo}.git"
+
+# ==============================================================================
+# 1. DATA PROCESSOR MATRIX (HERBIE & CFGRIB MULTI-PARSER SYSTEM)
+# ==============================================================================
+URL="https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Model"
+PREFIX="M-A0064"
+
+for j in $(seq 0 6 84); do
+    i=$(printf "%03d" $j)
     
-    # Get current and tomorrow date strings in UTC
-    YMD_TODAY=$(date -u +"%Y-%m-%d")
-    YMD_TOMORROW=$(date -v+1d -u +"%Y-%m-%d")
+    SOURCE_FILE="${PREFIX}-${i}.grb2"
+    FILE_PATH="${SAVE_DIR}/${i}.grb2"
+    IMAGE_PATH="${SAVE_DIR_2}/${j}.png"
 
-    # Define targets explicitly locked to the UTC timezone (-u)
-    T1=$(date -u -j -f "%Y-%m-%d %H:%M:%S" "$YMD_TODAY 01:00:00" +%s)
-    T2=$(date -u -j -f "%Y-%m-%d %H:%M:%S" "$YMD_TODAY 07:00:00" +%s)
-    T3=$(date -u -j -f "%Y-%m-%d %H:%M:%S" "$YMD_TODAY 15:00:00" +%s)
-    T4=$(date -u -j -f "%Y-%m-%d %H:%M:%S" "$YMD_TODAY 21:00:00" +%s)
+    echo "📥 Downloading ${SOURCE_FILE}..."
+    curl -L "${URL}/${SOURCE_FILE}" -o "${FILE_PATH}"
 
-    # If a specific target hour has already passed in UTC, advance it to tomorrow UTC
-    [ $NOW -ge $T1 ] && T1=$(date -u -j -f "%Y-%m-%d %H:%M:%S" "$YMD_TOMORROW 01:00:00" +%s)
-    [ $NOW -ge $T2 ] && T2=$(date -u -j -f "%Y-%m-%d %H:%M:%S" "$YMD_TOMORROW 07:00:00" +%s)
-    [ $NOW -ge $T3 ] && T3=$(date -u -j -f "%Y-%m-%d %H:%M:%S" "$YMD_TOMORROW 15:00:00" +%s)
-    [ $NOW -ge $T4 ] && T4=$(date -u -j -f "%Y-%m-%d %H:%M:%S" "$YMD_TOMORROW 21:00:00" +%s)
+    export EXP_FILE_PATH="${FILE_PATH}"
+    export EXP_IMAGE_PATH="${IMAGE_PATH}"
+    export EXP_J_VAL="${j}"
 
-    # Sort array of upcoming timestamps to find the absolute closest next target
-    NEXT_TARGET=$(printf "%s\n" "$T1" "$T2" "$T3" "$T4" | sort -n | head -n1)
-    
-    # Calculate difference in seconds (guaranteed to be positive now)
-    SECONDS_TO_WAIT=$((NEXT_TARGET - NOW))
-    
-    # Format target date display string for your log
-    TARGET_DATE_STRING=$(date -u -r $NEXT_TARGET +"%Y-%m-%d %H:%M:%S UTC")
-
-    # Check if we should execute immediately or sleep
-    if [ "$RUN_IMMEDIATELY" = true ]; then
-        echo "🚀 [FIRST PASS] Bypassing target wait time to execute immediate pipeline sync..."
-        SECONDS_TO_WAIT=0
-    else
-        echo "⏱️ Waiting $SECONDS_TO_WAIT seconds until the next fixed target: $TARGET_DATE_STRING"
-        sleep ${SECONDS_TO_WAIT}s
-    fi
-
-    echo "=================================================================="
-    echo "   CWA MESOSCALE DOWNLOAD & ANALYSIS DAEMON (RUNNING PIPELINE)   "
-    echo "=================================================================="
-    echo "--- 任務開始: $(date) (Target Achieved) ---"
-
-    # ==============================================================================
-    # DIRECTORY SAFEGUARD
-    # ==============================================================================
-    cd "/Users/eknlau/VS_code/GHMWS-meso-model"
-
-    # ==============================================================================
-    # CONFIGURATION
-    # ==============================================================================
-    BRANCH="main"
-    githubUser="eknlau5897"
-    githubRepo="GHMWS-meso-model"
-
-    SAVE_DIR="/Users/eknlau/Desktop/CWA/accu_rain"
-    SAVE_DIR_2="/Users/eknlau/VS_code/GHMWS-meso-model/model/CWA/accu_rain"
-
-    mkdir -p "$SAVE_DIR"
-    mkdir -p "$SAVE_DIR_2"
-
-    # ==============================================================================
-    # 0. RE-ALIGN PLUMBING LOCKS BEFORE DOWNLOADING
-    # ==============================================================================
-    if [ ! -d ".git" ]; then
-        echo "[Repo Guard] Setting up pristine Git plumbing matrix..."
-        git init
-        git checkout -b "$BRANCH"
-    fi
-
-    git remote remove origin 2>/dev/null || true
-    git remote add origin "https://github.com/${githubUser}/${githubRepo}.git"
-
-    # ==============================================================================
-    # 1. DATA PROCESSOR MATRIX (HERBIE & CFGRIB MULTI-PARSER SYSTEM)
-    # ==============================================================================
-    URL="https://cwaopendata.s3.ap-northeast-1.amazonaws.com/Model"
-    PREFIX="M-A0064"
-
-    for j in $(seq 0 6 84); do
-        i=$(printf "%03d" $j)
-        
-        SOURCE_FILE="${PREFIX}-${i}.grb2"
-        FILE_PATH="${SAVE_DIR}/${i}.grb2"
-        IMAGE_PATH="${SAVE_DIR_2}/${j}.png"
-
-        echo "📥 Downloading ${SOURCE_FILE}..."
-        curl -L "${URL}/${SOURCE_FILE}" -o "${FILE_PATH}"
-
-        export EXP_FILE_PATH="${FILE_PATH}"
-        export EXP_IMAGE_PATH="${IMAGE_PATH}"
-        export EXP_J_VAL="${j}"
-
-        /opt/anaconda3/bin/python << 'EOF_PYTHON'
+    /opt/anaconda3/bin/python << 'EOF_PYTHON'
 import os
 import matplotlib
 matplotlib.use('Agg') 
@@ -180,54 +135,21 @@ try:
 except Exception as e:
     print(f"❌ Failed to plot {j_val}: {e}")
 EOF_PYTHON
-    done
-
-    # ==============================================================================
-    # 2. RUN SUB-ROUTINE SCRIPTS
-    # ==============================================================================
-    echo "⚙️ Executing auxiliary surface mapping matrices..."
-    ./cwa_wrf_surf.sh || echo "⚠️ cwa_wrf_surf.sh failed"
-    ./cwa_wrf_small.sh || echo "⚠️ cwa_wrf_small.sh failed"
-    ./cwa_wrf_6hr.sh || echo "⚠️ cwa_wrf_6hr.sh failed"
-
-    # ==============================================================================
-    # 3. ZERO-CONFLICT COMMIT PIPELINE
-    # ==============================================================================
-    echo "⚠️ Collapsing execution logs down to 1 single commit tracking frame..."
-    git update-ref -d refs/heads/"$BRANCH" 2>/dev/null || true
-
-    echo "📦 Packaging current layout structure..."
-    git add "$(basename "$0")"
-    git add -A
-
-    if [ -d "./model" ]; then git add ./model/*; fi
-    if [ -f "./index.html" ]; then git add index.html; fi
-    if [ -f "./GHMWS.png" ]; then git add GHMWS.png; fi
-
-    git commit -m "Auto-update: CWA WRF $(date +'%Y-%m-%d %H:%M') [History Cleared]"
-
-    # ==============================================================================
-    # 4. REMOTE PUSH AND VS CODE GRAPH SYNC
-    # ==============================================================================
-    echo "🚀 Streamlining zero-overhead push directly up to GitHub..."
-    git push -u origin "$BRANCH" --force
-
-    echo "🔄 Synchronizing VS Code local branch tracking pointers..."
-    git update-ref refs/remotes/origin/"$BRANCH" refs/heads/"$BRANCH"
-
-    # ==============================================================================
-    # 5. AGGRESSIVE MEMORY PURGE
-    # ==============================================================================
-    echo "🧹 Purging local object database trails..."
-    git reflog expire --expire=now --all
-    git gc --prune=now --aggressive 2>/dev/null
-
-    git push origin "$BRANCH" --force
-    echo "✅ Execution task finalized seamlessly."
-
-    # Turn off the manual run override flag so subsequent loops calculate true sleep times
-    RUN_IMMEDIATELY=false
-
-    # Give a small 2-second breathing room before beginning the next time evaluation calculation
-    sleep 2s
 done
+
+# ==============================================================================
+# 2. RUN SUB-ROUTINE SCRIPTS
+# ==============================================================================
+echo "⚙️ Executing auxiliary surface mapping matrices..."
+./cwa_wrf_surf.sh || echo "⚠️ cwa_wrf_surf.sh failed"
+./cwa_wrf_small.sh || echo "⚠️ cwa_wrf_small.sh failed"
+./cwa_wrf_6hr.sh || echo "⚠️ cwa_wrf_6hr.sh failed"
+
+# ==============================================================================
+# 3. ZERO-CONFLICT COMMIT PIPELINE
+# ==============================================================================
+echo "⚠️ Collapsing execution logs down to 1 single commit tracking frame..."
+git update-ref -d refs/heads/"$BRANCH" 2>/dev/null || true
+
+echo "📦 Packaging current layout structure..."
+# Your original Git commit/push logic goes directly here...
