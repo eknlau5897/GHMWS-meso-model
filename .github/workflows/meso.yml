@@ -1,0 +1,43 @@
+name: CWA WRF Plot Automation (macOS)
+
+on:
+  schedule:
+    # Runs every 6 hours using cron syntax (00:00, 06:00, 12:00, 18:00 UTC)
+    - cron: '0 */6 * * *'
+  workflow_dispatch: # Allows manual trigger from the GitHub Actions tab
+
+jobs:
+  run-pipeline:
+    runs-on: macos-latest
+    permissions:
+      contents: write # Required to push commits back to the repo
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install System Geospatial Libraries (Homebrew)
+        run: |
+          brew update
+          brew install eccodes proj
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install xarray numpy matplotlib cartopy cfgrib pandas herbie-data metpy
+
+      - name: Run Main CWA WRF Pipeline Script
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_ACTOR: ${{ github.actor }}
+        run: |
+          chmod +x ./CWA.sh
+          chmod +x ./cwa_wrf_surf.sh
+          chmod +x ./cwa_wrf_small.sh
+          chmod +x ./cwa_wrf_6hr.sh
+          
+          ./CWA.sh
